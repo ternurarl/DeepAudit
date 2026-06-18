@@ -6,6 +6,7 @@
 
 - [快速开始](#快速开始)
 - [Docker Compose 部署（推荐）](#docker-compose-部署推荐)
+- [手动创建首个管理员账户](#手动创建首个管理员账户)
 - [Agent 审计模式部署](#agent-审计模式部署)
 - [生产环境部署](#生产环境部署)
 - [本地开发部署](#本地开发部署)
@@ -26,8 +27,8 @@ cd DeepAudit
 cp backend/env.example backend/.env
 # 编辑 backend/.env，配置 LLM API Key
 
-# 3. 启动所有服务
-docker compose up -d
+# 3. 从源码构建并启动所有服务
+docker compose up -d --build
 
 # 4. 访问应用
 # 前端: http://localhost:3000
@@ -36,7 +37,8 @@ docker compose up -d
 
 ### 管理员账户
 
-系统不会在初始化时创建公开演示账户。首次部署后，请通过数据库或受控的运维流程创建管理员账户。
+系统不会在初始化时创建公开演示账户或默认管理员。首次部署后，请按
+[手动创建首个管理员账户](#手动创建首个管理员账户) 的步骤创建管理员。
 
 > ⚠️ **安全提示**: 不要在生产环境保留默认账号、弱密码或公开注册入口。
 
@@ -88,8 +90,8 @@ LLM_MODEL=gpt-4o-mini
 ```
 
 ```bash
-# 3. 启动所有服务
-docker compose up -d
+# 3. 从源码构建并启动所有服务
+docker compose up -d --build
 
 # 4. 查看服务状态
 docker compose ps
@@ -105,6 +107,8 @@ docker compose logs -f
 | `frontend` | 3000 | React 前端应用（生产构建） |
 | `backend` | 8000 | FastAPI 后端 API |
 | `db` | 5432 | PostgreSQL 15 数据库 |
+| `redis` | 6379 | Agent 任务队列 |
+| `sandbox` | - | 构建 `deepaudit/sandbox:latest` 沙箱镜像 |
 
 ### 访问地址
 
@@ -112,6 +116,9 @@ docker compose logs -f
 - 后端 API: http://localhost:8000
 - API 文档 (Swagger): http://localhost:8000/docs
 - API 文档 (ReDoc): http://localhost:8000/redoc
+
+生产环境建议只通过 Nginx/HTTPS 对外暴露前端入口。后端 `8000`、数据库 `5432` 和
+Redis `6379` 不建议直接开放到公网。
 
 ### 常用命令
 
@@ -132,6 +139,94 @@ docker compose logs -f backend
 docker compose exec backend sh
 docker compose exec db psql -U postgres -d deepaudit
 ```
+
+---
+
+## 手动创建首个管理员账户
+
+公开注册接口已移除，初始化流程也不会自动创建 `demo@example.com / demo123`。首个管理员需要
+在服务启动并完成数据库迁移后，通过数据库或受控运维流程创建。
+
+### 1. 生成用户 ID 和密码哈希
+
+应用使用 bcrypt 存储密码，不能把明文密码直接写入 `users.hashed_password`。先在后端容器中生成
+用户 ID 和 bcrypt 哈希：
+
+```bash
+docker compose exec backend .venv/bin/python -c "import uuid; from app.core.security import get_password_hash; print(str(uuid.uuid4())); print(get_password_hash('请换成强密码'))"
+```
+
+输出两行内容：
+
+```text
+第一行: 用户 id
+第二行: bcrypt 密码哈希
+```
+
+请记录生成哈希时使用的明文密码，后续登录使用该明文密码。
+
+### 2. 写入 PostgreSQL
+
+进入数据库：
+
+```bash
+docker compose exec db psql -U postgres -d deepaudit
+```
+
+执行插入语句，把 `id`、`email`、`hashed_password` 和 `full_name` 替换为你的实际值：
+
+```sql
+INSERT INTO users (
+  id,
+  email,
+  hashed_password,
+  full_name,
+  is_active,
+  is_superuser,
+  role,
+  created_at
+) VALUES (
+  '刚才生成的用户id',
+  'admin@example.com',
+  '刚才生成的bcrypt哈希',
+  '管理员',
+  true,
+  true,
+  'admin',
+  now()
+);
+```
+
+检查账户是否写入成功：
+
+```sql
+SELECT id, email, full_name, is_active, is_superuser, role, created_at
+FROM users
+WHERE email = 'admin@example.com';
+```
+
+退出数据库：
+
+```sql
+\q
+```
+
+然后使用 `admin@example.com` 和生成哈希时传入的明文密码登录前端。管理员账户应同时满足
+`is_superuser=true` 和 `role='admin'`，以匹配后端权限判断和前端角色展示。
+
+### 3. 验证部署
+
+```bash
+docker compose ps
+docker compose logs backend
+```
+
+确认：
+
+- `db`、`redis`、`backend`、`frontend` 正常运行，数据库健康检查通过
+- 后端日志没有 Alembic 迁移失败或数据库连接失败
+- 浏览器打开 http://服务器IP:3000 能看到登录页
+- 管理员账号可以登录，并能访问 `/admin` 管理功能
 
 ---
 
@@ -228,7 +323,7 @@ Docker Compose 默认配置已适用于生产环境：
 4. **数据库安全**：修改默认数据库密码，限制访问 IP
 5. **API 限流**：配置 Nginx 或应用层限流
 6. **日志监控**：配置日志收集和监控告警
-7. **删除演示账户**：生产环境请删除或禁用 demo 账户
+7. **关闭公开注册**：不要恢复公开自助注册入口；首个管理员请通过受控流程创建
 
 ### Nginx 反向代理配置（可选）
 
@@ -481,9 +576,10 @@ LLM_GAP_MS=3000
 
 **Q: 前端无法连接后端 API**
 
-Docker Compose 部署时，前端通过 `http://localhost:8000/api/v1` 访问后端。确保：
+Docker Compose 部署时，前端使用同源 `/api/v1`，由前端 Nginx 代理到后端容器。确保：
 1. 后端容器正常运行：`docker compose ps backend`
-2. 后端端口 8000 可访问：`curl http://localhost:8000/docs`
+2. 后端端口 8000 在服务器本机可访问：`curl http://localhost:8000/docs`
+3. 前端容器加载了当前 Nginx 配置：`docker compose logs frontend`
 
 本地开发时，检查 `frontend/.env` 中的 API 地址配置：
 

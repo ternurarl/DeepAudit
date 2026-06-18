@@ -321,13 +321,21 @@ git clone https://github.com/lintsinghua/DeepAudit.git && cd DeepAudit
 
 # 2. 配置环境变量
 cp backend/env.example backend/.env
-# 编辑 backend/.env 填入你的 LLM API Key
+# 编辑 backend/.env，至少修改 SECRET_KEY、LLM_PROVIDER、LLM_API_KEY、LLM_MODEL
 
-# 3. 一键启动
-docker compose up -d
+# 3. 从源码构建并启动
+docker compose up -d --build
+
+# 4. 查看服务状态
+docker compose ps
 ```
 
-> 首次启动会自动构建沙箱镜像，可能需要几分钟。
+建议使用 `openssl rand -hex 32` 生成 `SECRET_KEY`。首次启动会自动构建后端、前端和沙箱镜像，
+可能需要几分钟。
+
+系统不会初始化默认管理员或演示账户。服务启动并完成数据库迁移后，请按
+[部署指南 - 手动创建首个管理员账户](docs/DEPLOYMENT.md#手动创建首个管理员账户) 创建管理员，
+然后访问 http://localhost:3000 登录。
 
 ---
 

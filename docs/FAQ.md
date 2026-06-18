@@ -28,17 +28,18 @@ cd DeepAudit
 cp backend/env.example backend/.env
 # 编辑 backend/.env，填入你的 API Key
 
-# 3. 启动服务
-docker-compose up -d
+# 3. 从源码构建并启动服务
+docker compose up -d --build
 
-# 4. 访问 http://localhost:5173
+# 4. 访问 http://localhost:3000
 ```
 
 ### Q: 默认管理员账户是什么？
 
 系统不会在初始化时创建公开演示账户或默认管理员账户。
 
-首次部署后，请通过数据库或受控的运维流程创建管理员账户。生产环境不要开放自助注册入口。
+首次部署后，请按 [部署指南 - 手动创建首个管理员账户](DEPLOYMENT.md#手动创建首个管理员账户)
+通过数据库或受控的运维流程创建管理员账户。生产环境不要开放自助注册入口。
 
 ### Q: 不想用 Docker，如何本地运行？
 
@@ -62,7 +63,7 @@ DeepAudit 支持所有主流编程语言的代码分析，包括但不限于：
 
 **方式一：浏览器运行时配置（推荐）**
 
-1. 访问 `http://localhost:5173/admin` 系统管理页面
+1. 访问 `http://localhost:3000/admin` 系统管理页面
 2. 在"系统配置"标签页选择不同的 LLM 提供商
 3. 填入对应的 API Key
 4. 保存即可，无需重启
@@ -238,7 +239,7 @@ LLM_MODEL=gpt-4o-mini
 
 ```bash
 # 检查端口占用
-lsof -i :5173
+lsof -i :3000
 lsof -i :8000
 lsof -i :5432
 
@@ -249,9 +250,9 @@ lsof -i :5432
 
 ```bash
 # 确保数据库先启动
-docker-compose up -d db
-docker-compose exec db pg_isready -U postgres
-docker-compose up -d backend
+docker compose up -d db
+docker compose exec db pg_isready -U postgres
+docker compose up -d backend
 ```
 
 ### Q: Windows 导出 PDF 报错怎么办？
@@ -277,7 +278,7 @@ pacman -S mingw-w64-x86_64-pango mingw-w64-x86_64-gtk3
 **方法三：使用 Docker 部署（最简单）**
 
 ```bash
-docker-compose up -d backend
+docker compose up -d backend
 ```
 
 Docker 镜像已包含所有依赖，无需额外配置。
@@ -300,7 +301,7 @@ brew install pango cairo gdk-pixbuf libffi
 VITE_API_BASE_URL=http://localhost:8000/api/v1
 
 # Docker Compose 部署
-VITE_API_BASE_URL=/api
+VITE_API_BASE_URL=/api/v1
 ```
 
 ### Q: 数据库迁移失败？
@@ -373,10 +374,10 @@ Ollama 本地模型没有网络延迟，适合大量文件分析。
 
 ```bash
 # 导出数据
-docker-compose exec db pg_dump -U postgres deepaudit > backup.sql
+docker compose exec db pg_dump -U postgres deepaudit > backup.sql
 
 # 恢复数据
-docker-compose exec -T db psql -U postgres deepaudit < backup.sql
+docker compose exec -T db psql -U postgres deepaudit < backup.sql
 ```
 
 ### Q: 如何恢复数据？
@@ -400,10 +401,10 @@ docker-compose exec -T db psql -U postgres deepaudit < backup.sql
 git pull origin main
 
 # 重新构建镜像
-docker-compose build --no-cache
+docker compose build --no-cache
 
 # 重启服务
-docker-compose up -d
+docker compose up -d
 ```
 
 ### Q: 如何参与贡献？
