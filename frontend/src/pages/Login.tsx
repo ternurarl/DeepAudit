@@ -257,19 +257,6 @@ export default function Login() {
                 )}
               </Button>
             </form>
-
-            {/* Footer */}
-            <div className="mt-6 pt-5 border-t border-border text-center">
-              <p className="text-base font-mono text-muted-foreground">
-                还没有账号？{" "}
-                <span
-                  className="text-primary font-bold cursor-pointer hover:underline"
-                  onClick={() => navigate("/register")}
-                >
-                  立即注册
-                </span>
-              </p>
-            </div>
           </div>
         </div>
 

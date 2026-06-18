@@ -34,7 +34,7 @@ export const api = {
   },
 
   async createProfiles(profile: Partial<Profile>): Promise<Profile> {
-    // Registration is handled separately via /auth/register
+    // Public self-registration is disabled; users are provisioned administratively.
     return profile as Profile;
   },
 

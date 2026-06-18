@@ -1,18 +1,16 @@
 """
 Tests for app/api/v1/endpoints/auth.py
 
-Covers RegisterRequest validation, login, and register endpoints.
+Covers login and verifies public registration is not exposed.
 Uses direct function calls with mocked db sessions and security helpers.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi import HTTPException
-from fastapi.security import OAuth2PasswordRequestForm
 
-from app.api.v1.endpoints.auth import RegisterRequest, login, register
-
+from app.api.v1.endpoints.auth import login, router
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -44,12 +42,11 @@ def _make_user(
     return user
 
 
-def _mock_db(user_query_result=None, all_users=None):
+def _mock_db(user_query_result=None):
     """
     Build an AsyncMock db session that returns the expected scalars.
 
     - user_query_result: the single user returned by the first select query
-    - all_users: list of users returned by the "count all" query (register only)
     """
     db = AsyncMock()
 
@@ -59,15 +56,7 @@ def _mock_db(user_query_result=None, all_users=None):
     first_scalars.first.return_value = user_query_result
     first_result.scalars.return_value = first_scalars
 
-    if all_users is not None:
-        # Second execute call: select(User) — count all users
-        second_result = MagicMock()
-        second_scalars = MagicMock()
-        second_scalars.all.return_value = all_users
-        second_result.scalars.return_value = second_scalars
-        db.execute.side_effect = [first_result, second_result]
-    else:
-        db.execute.return_value = first_result
+    db.execute.return_value = first_result
 
     # SQLAlchemy AsyncSession.add() is synchronous, override the AsyncMock
     db.add = MagicMock()
@@ -78,50 +67,7 @@ def _mock_db(user_query_result=None, all_users=None):
 
 
 # ===================================================================
-# 1. RegisterRequest validation
-# ===================================================================
-
-class TestRegisterRequestValidation:
-    """Pydantic validation tests for the RegisterRequest model."""
-
-    def test_valid_request(self):
-        req = RegisterRequest(
-            email="alice@example.com",
-            password="secret123",
-            full_name="Alice",
-        )
-        assert req.email == "alice@example.com"
-        assert req.password == "secret123"
-        assert req.full_name == "Alice"
-
-    def test_invalid_email_fails(self):
-        with pytest.raises(Exception):
-            # "not-an-email" is not a valid EmailStr
-            RegisterRequest(
-                email="not-an-email",
-                password="secret123",
-                full_name="Alice",
-            )
-
-    def test_missing_password_fails(self):
-        with pytest.raises(Exception):
-            RegisterRequest(
-                email="alice@example.com",
-                full_name="Alice",
-                # password omitted
-            )
-
-    def test_missing_full_name_fails(self):
-        with pytest.raises(Exception):
-            RegisterRequest(
-                email="alice@example.com",
-                password="secret123",
-                # full_name omitted
-            )
-
-
-# ===================================================================
-# 2. login endpoint
+# 1. login endpoint
 # ===================================================================
 
 class TestLoginEndpoint:
@@ -192,113 +138,12 @@ class TestLoginEndpoint:
 
 
 # ===================================================================
-# 3. register endpoint
+# 2. disabled public registration
 # ===================================================================
 
-class TestRegisterEndpoint:
-    """Tests for the register async endpoint function."""
+class TestPublicRegistrationDisabled:
+    """Tests that anonymous self-registration is not exposed."""
 
-    @pytest.mark.asyncio
-    async def test_successful_registration_returns_user(self):
-        db = _mock_db(user_query_result=None, all_users=[])
-
-        db.refresh = AsyncMock()
-
-        user_in = RegisterRequest(
-            email="new@example.com",
-            password="password123",
-            full_name="New User",
-        )
-
-        with patch(
-            "app.api.v1.endpoints.auth.security.get_password_hash",
-            return_value="hashed_new",
-        ):
-            result = await register(db=db, user_in=user_in)
-
-        assert result.email == "new@example.com"
-        assert result.full_name == "New User"
-        assert result.is_active is True
-        db.add.assert_called_once()
-        db.commit.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_duplicate_email_raises_400(self):
-        existing = _make_user()
-        db = _mock_db(user_query_result=existing)
-
-        user_in = RegisterRequest(
-            email="user@example.com",
-            password="password123",
-            full_name="Dup User",
-        )
-
-        with pytest.raises(HTTPException) as exc_info:
-            await register(db=db, user_in=user_in)
-        assert exc_info.value.status_code == 400
-
-    @pytest.mark.asyncio
-    async def test_first_user_gets_admin_role(self):
-        db = _mock_db(user_query_result=None, all_users=[])
-
-        captured_user = None
-
-        def capture_add(obj):
-            nonlocal captured_user
-            captured_user = obj
-
-        db.add.side_effect = capture_add
-
-        async def fake_refresh(obj):
-            obj.id = "admin-uuid-001"
-
-        db.refresh = fake_refresh
-
-        user_in = RegisterRequest(
-            email="admin@example.com",
-            password="admin123",
-            full_name="Admin User",
-        )
-
-        with patch(
-            "app.api.v1.endpoints.auth.security.get_password_hash",
-            return_value="hashed_admin",
-        ):
-            await register(db=db, user_in=user_in)
-
-        assert captured_user.is_superuser is True
-        assert captured_user.role == "admin"
-
-    @pytest.mark.asyncio
-    async def test_subsequent_user_gets_member_role(self):
-        # all_users has one existing user -> not the first
-        existing_user = _make_user()
-        db = _mock_db(user_query_result=None, all_users=[existing_user])
-
-        captured_user = None
-
-        def capture_add(obj):
-            nonlocal captured_user
-            captured_user = obj
-
-        db.add.side_effect = capture_add
-
-        async def fake_refresh(obj):
-            obj.id = "member-uuid-002"
-
-        db.refresh = fake_refresh
-
-        user_in = RegisterRequest(
-            email="member@example.com",
-            password="member123",
-            full_name="Member User",
-        )
-
-        with patch(
-            "app.api.v1.endpoints.auth.security.get_password_hash",
-            return_value="hashed_member",
-        ):
-            await register(db=db, user_in=user_in)
-
-        assert captured_user.is_superuser is False
-        assert captured_user.role == "member"
+    def test_register_route_is_not_registered(self):
+        paths = {route.path for route in router.routes}
+        assert "/register" not in paths

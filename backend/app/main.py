@@ -1,12 +1,13 @@
 import logging
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.config import settings
 from app.api.v1.api import api_router
-from app.db.session import AsyncSessionLocal
+from app.core.config import settings
 from app.db.init_db import init_db
+from app.db.session import AsyncSessionLocal
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -35,8 +36,9 @@ async def check_agent_services():
 
     # 检查 Redis 连接（可选警告）
     try:
-        import redis
         import os
+
+        import redis
         redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
         r = redis.from_url(redis_url)
         r.ping()
@@ -86,9 +88,7 @@ async def lifespan(app: FastAPI):
 
     logger.info("=" * 50)
     logger.info("DeepAudit 后端服务已启动")
-    logger.info(f"API 文档: http://localhost:8000/docs")
-    logger.info("=" * 50)
-    logger.info("演示账户: demo@example.com / demo123")
+    logger.info("API 文档: http://localhost:8000/docs")
     logger.info("=" * 50)
 
     yield
@@ -124,8 +124,4 @@ async def root():
     return {
         "message": "Welcome to DeepAudit API",
         "docs": "/docs",
-        "demo_account": {
-            "email": "demo@example.com",
-            "password": "demo123"
-        }
     }

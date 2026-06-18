@@ -9,27 +9,33 @@ cd backend && python -m scripts.create_agent_demo_data
 
 import asyncio
 import json
-import uuid
-import sys
 import os
-from datetime import datetime, timedelta, timezone
+import sys
+import uuid
+from datetime import UTC, datetime, timedelta
 
 # 添加backend目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.future import select
+from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
-from app.models.user import User
-from app.models.project import Project
 from app.models.agent_task import (
-    AgentTask, AgentEvent, AgentFinding, AgentTreeNode, AgentCheckpoint,
-    AgentTaskStatus, AgentTaskPhase, AgentEventType,
-    VulnerabilitySeverity, VulnerabilityType, FindingStatus
+    AgentEvent,
+    AgentEventType,
+    AgentFinding,
+    AgentTask,
+    AgentTaskPhase,
+    AgentTaskStatus,
+    AgentTreeNode,
+    FindingStatus,
+    VulnerabilitySeverity,
+    VulnerabilityType,
 )
-
+from app.models.project import Project
+from app.models.user import User
 
 # 演示数据配置
 DEMO_PROJECT_NAME = "VulnWebApp - 安全演示项目"
@@ -52,7 +58,7 @@ async def get_or_create_demo_project(db: AsyncSession, user_id: str) -> Project:
             is_active=True,
             default_branch="main",
             programming_languages=json.dumps(["Python", "JavaScript", "SQL"]),
-            created_at=datetime.now(timezone.utc) - timedelta(days=7),
+            created_at=datetime.now(UTC) - timedelta(days=7),
         )
         db.add(project)
         await db.flush()
@@ -76,7 +82,7 @@ async def create_agent_demo_task(db: AsyncSession, project: Project, user_id: st
         await db.delete(existing)
         await db.flush()
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     task_start = now - timedelta(minutes=15)
     task_end = now - timedelta(minutes=2)
 
@@ -1243,16 +1249,21 @@ async def main():
 
     async with async_session() as db:
         try:
-            # 获取演示用户
-            result = await db.execute(select(User).where(User.email == "demo@example.com"))
+            # 获取目标用户。生产环境不提供默认演示账号，必须显式指定。
+            demo_user_email = os.getenv("DEMO_USER_EMAIL")
+            if not demo_user_email:
+                print("❌ 未配置 DEMO_USER_EMAIL，无法创建演示数据")
+                return
+
+            result = await db.execute(select(User).where(User.email == demo_user_email))
             demo_user = result.scalars().first()
 
             if not demo_user:
-                print("❌ 未找到演示用户 (demo@example.com)")
-                print("请先运行应用初始化数据库")
+                print(f"❌ 未找到用户 ({demo_user_email})")
+                print("请先创建用户，或设置 DEMO_USER_EMAIL 为已有用户邮箱")
                 return
 
-            print(f"使用演示用户: {demo_user.email}")
+            print(f"使用用户: {demo_user.email}")
 
             # 创建或获取演示项目
             project = await get_or_create_demo_project(db, demo_user.id)
@@ -1277,7 +1288,7 @@ async def main():
             print(f"   任务 ID: {task.id}")
             print(f"   项目: {project.name}")
             print(f"   发现漏洞: {task.findings_count} 个")
-            print(f"   严重程度分布:")
+            print("   严重程度分布:")
             print(f"     - Critical: {task.critical_count}")
             print(f"     - High: {task.high_count}")
             print(f"     - Medium: {task.medium_count}")
